@@ -1,0 +1,13 @@
+{
+    "autodeskProduct": "Fusion360",
+    "type": "addin",
+    "id": "TextToModel-MCP-Server",
+    "author": "TextToModel",
+    "description": {
+        "": "MCP Server for controlling Fusion 360 from Claude Desktop with JIS standards support"
+    },
+    "version": "1.0.0",
+    "runOnStartup": false,
+    "supportedOS": "windows|mac",
+    "editEnabled": true
+}

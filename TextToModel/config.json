@@ -1,0 +1,7 @@
+{
+    "host": "127.0.0.1",
+    "port": 13405,
+    "server_name": "fusion360-mcp",
+    "server_version": "1.0.0",
+    "log_level": "INFO"
+}
