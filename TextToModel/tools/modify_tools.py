@@ -1,6 +1,6 @@
-"""Modification tools (fillet, chamfer, shell, mirror) for Fusion 360."""
+"""Modification tools (fillet, chamfer, shell, mirror, variable_fillet, draft) for Fusion 360."""
 
-from utils.geometry import mm_to_cm, get_body_by_name
+from utils.geometry import mm_to_cm, deg_to_rad, get_body_by_name
 
 
 def register(registry):
@@ -46,7 +46,7 @@ def register(registry):
 
     registry.register(
         name="shell",
-        description="Shell a body to make it hollow, removing selected faces.",
+        description="Shell a body to make it hollow, removing selected faces. Supports inside/outside thickness.",
         input_schema={
             "type": "object",
             "properties": {
@@ -56,7 +56,11 @@ def register(registry):
                     "description": "Array of face indices to remove (open faces).",
                     "items": {"type": "integer"},
                 },
-                "thickness": {"type": "number", "description": "Wall thickness in mm."},
+                "thickness": {"type": "number", "description": "Wall thickness in mm (inside direction)."},
+                "outside_thickness": {
+                    "type": "number",
+                    "description": "Outside wall thickness in mm. If specified, shell grows outward by this amount.",
+                },
                 "direction": {
                     "type": "string",
                     "description": "Shell direction: 'inside' or 'outside'.",
@@ -95,6 +99,61 @@ def register(registry):
             "required": ["body_names", "plane"],
         },
         handler=mirror,
+    )
+
+    registry.register(
+        name="variable_fillet",
+        description="Apply a variable-radius fillet to an edge, with different radii at start and end.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "body_name": {"type": "string", "description": "Name of the body."},
+                "edge_index": {"type": "integer", "description": "Index of the edge to fillet."},
+                "start_radius": {"type": "number", "description": "Fillet radius at start vertex in mm."},
+                "end_radius": {"type": "number", "description": "Fillet radius at end vertex in mm."},
+                "mid_points": {
+                    "type": "array",
+                    "description": "Optional array of {position, radius} for intermediate control points. Position is 0.0-1.0 along edge.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "position": {"type": "number", "description": "Parameter position (0.0-1.0) along edge."},
+                            "radius": {"type": "number", "description": "Radius at this position in mm."},
+                        },
+                        "required": ["position", "radius"],
+                    },
+                },
+            },
+            "required": ["body_name", "edge_index", "start_radius", "end_radius"],
+        },
+        handler=variable_fillet,
+    )
+
+    registry.register(
+        name="draft",
+        description="Apply a draft (taper) angle to faces of a body, typically for injection molding.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "body_name": {"type": "string", "description": "Name of the body."},
+                "face_indices": {
+                    "type": "array",
+                    "description": "Array of face indices to apply draft to.",
+                    "items": {"type": "integer"},
+                },
+                "plane": {
+                    "type": "string",
+                    "description": "Pull direction plane: 'XY', 'XZ', or 'YZ'.",
+                    "enum": ["XY", "XZ", "YZ"],
+                },
+                "angle": {
+                    "type": "number",
+                    "description": "Draft angle in degrees.",
+                },
+            },
+            "required": ["body_name", "face_indices", "plane", "angle"],
+        },
+        handler=draft,
     )
 
 
@@ -163,8 +222,9 @@ def chamfer(app, body_name, edge_indices, distance, **kwargs):
         len(edge_indices), body_name, distance, feature.name)
 
 
-def shell(app, body_name, face_indices, thickness, direction="inside", **kwargs):
-    """Shell a body to make it hollow."""
+def shell(app, body_name, face_indices, thickness, outside_thickness=None,
+          direction="inside", **kwargs):
+    """Shell a body to make it hollow. Supports inside and outside thickness."""
     import adsk.core
     import adsk.fusion
 
@@ -186,9 +246,14 @@ def shell(app, body_name, face_indices, thickness, direction="inside", **kwargs)
     shell_input = shells.createInput(face_collection, direction == "inside")
     shell_input.insideThickness = adsk.core.ValueInput.createByReal(mm_to_cm(thickness))
 
+    if outside_thickness is not None:
+        shell_input.outsideThickness = adsk.core.ValueInput.createByReal(mm_to_cm(outside_thickness))
+
     feature = shells.add(shell_input)
-    return "Shelled '{}' with {}mm thickness ({}) -> '{}'".format(
-        body_name, thickness, direction, feature.name)
+    desc = "{}mm inside".format(thickness)
+    if outside_thickness is not None:
+        desc += ", {}mm outside".format(outside_thickness)
+    return "Shelled '{}' ({}) -> '{}'".format(body_name, desc, feature.name)
 
 
 def mirror(app, body_names, plane, operation="new_body", **kwargs):
@@ -220,3 +285,82 @@ def mirror(app, body_names, plane, operation="new_body", **kwargs):
     feature = mirrors.add(mirror_input)
     return "Mirrored {} bodies across {} -> '{}'".format(
         len(body_names), plane, feature.name)
+
+
+def variable_fillet(app, body_name, edge_index, start_radius, end_radius,
+                     mid_points=None, **kwargs):
+    """Apply a variable-radius fillet to an edge."""
+    import adsk.core
+    import adsk.fusion
+
+    design = app.activeProduct
+    root = design.rootComponent
+
+    body = get_body_by_name(app, body_name)
+    if not body:
+        raise ValueError("Body '{}' not found.".format(body_name))
+
+    if edge_index < 0 or edge_index >= body.edges.count:
+        raise ValueError("Edge index {} out of range (0-{})".format(
+            edge_index, body.edges.count - 1))
+    edge = body.edges.item(edge_index)
+
+    fillets = root.features.filletFeatures
+    fillet_input = fillets.createInput()
+
+    edge_collection = adsk.core.ObjectCollection.create()
+    edge_collection.add(edge)
+
+    start_val = adsk.core.ValueInput.createByReal(mm_to_cm(start_radius))
+    end_val = adsk.core.ValueInput.createByReal(mm_to_cm(end_radius))
+
+    var_set = fillet_input.addVariableRadiusEdgeSet(
+        edge_collection, start_val, end_val, True)
+
+    if mid_points:
+        for mp in mid_points:
+            pos = mp["position"]
+            rad = adsk.core.ValueInput.createByReal(mm_to_cm(mp["radius"]))
+            var_set.addRadiusAtParameter(pos, rad)
+
+    feature = fillets.add(fillet_input)
+    mid_desc = ""
+    if mid_points:
+        mid_desc = " with {} mid-points".format(len(mid_points))
+    return "Variable fillet on '{}' edge {} ({}mm -> {}mm{}) -> '{}'".format(
+        body_name, edge_index, start_radius, end_radius, mid_desc, feature.name)
+
+
+def draft(app, body_name, face_indices, plane, angle, **kwargs):
+    """Apply draft angle to faces."""
+    import adsk.core
+    import adsk.fusion
+    from utils.geometry import get_plane
+
+    design = app.activeProduct
+    root = design.rootComponent
+
+    body = get_body_by_name(app, body_name)
+    if not body:
+        raise ValueError("Body '{}' not found.".format(body_name))
+
+    plane_obj = get_plane(app, plane)
+
+    drafts = root.features.draftFeatures
+
+    face_collection = adsk.core.ObjectCollection.create()
+    for idx in face_indices:
+        if idx < 0 or idx >= body.faces.count:
+            raise ValueError("Face index {} out of range (0-{})".format(
+                idx, body.faces.count - 1))
+        face_collection.add(body.faces.item(idx))
+
+    draft_input = drafts.createInput(
+        face_collection, plane_obj,
+        adsk.core.ValueInput.createByReal(deg_to_rad(angle)),
+        False,
+    )
+
+    feature = drafts.add(draft_input)
+    return "Draft {}deg on {} faces of '{}' (plane: {}) -> '{}'".format(
+        angle, len(face_indices), body_name, plane, feature.name)

@@ -88,7 +88,7 @@ def register(registry):
 
     registry.register(
         name="sweep",
-        description="Sweep a sketch profile along a path to create a solid body.",
+        description="Sweep a sketch profile along a path to create a solid body. Optionally use a guide rail to control the cross-section scaling.",
         input_schema={
             "type": "object",
             "properties": {
@@ -110,6 +110,21 @@ def register(registry):
                     "description": "Index of the curve in the path sketch to use as path.",
                     "default": 0,
                 },
+                "guide_rail": {
+                    "type": "object",
+                    "description": "Optional guide rail: {sketch_index, curve_index} to control cross-section shape along path.",
+                    "properties": {
+                        "sketch_index": {"type": "integer"},
+                        "curve_index": {"type": "integer", "default": 0},
+                    },
+                    "required": ["sketch_index"],
+                },
+                "orientation": {
+                    "type": "string",
+                    "description": "Profile orientation along path: 'perpendicular' or 'parallel'.",
+                    "enum": ["perpendicular", "parallel"],
+                    "default": "perpendicular",
+                },
                 "operation": {
                     "type": "string",
                     "description": "Boolean operation: 'new_body', 'join', 'cut', 'intersect'.",
@@ -124,7 +139,11 @@ def register(registry):
 
     registry.register(
         name="loft",
-        description="Create a loft between two or more sketch profiles.",
+        description=(
+            "Create a loft between two or more sketch profiles. "
+            "Optionally use guide rails to control the surface transition, "
+            "a center line to constrain the loft, or create a closed loft."
+        ),
         input_schema={
             "type": "object",
             "properties": {
@@ -140,6 +159,32 @@ def register(registry):
                         "required": ["sketch_index"],
                     },
                     "minItems": 2,
+                },
+                "guide_rails": {
+                    "type": "array",
+                    "description": "Optional array of {sketch_index, curve_index} for guide rails controlling the surface shape.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "sketch_index": {"type": "integer"},
+                            "curve_index": {"type": "integer", "default": 0},
+                        },
+                        "required": ["sketch_index"],
+                    },
+                },
+                "center_line": {
+                    "type": "object",
+                    "description": "Optional center line: {sketch_index, curve_index} to constrain the loft path.",
+                    "properties": {
+                        "sketch_index": {"type": "integer"},
+                        "curve_index": {"type": "integer", "default": 0},
+                    },
+                    "required": ["sketch_index"],
+                },
+                "is_closed": {
+                    "type": "boolean",
+                    "description": "If true, create a closed loft (last section connects back to first).",
+                    "default": False,
                 },
                 "operation": {
                     "type": "string",
@@ -267,8 +312,9 @@ def revolve(app, sketch_index=None, profile_index=0, axis="X",
 
 
 def sweep(app, profile_sketch_index, path_sketch_index, profile_index=0,
-          path_curve_index=0, operation="new_body", **kwargs):
-    """Sweep a profile along a path."""
+          path_curve_index=0, guide_rail=None, orientation="perpendicular",
+          operation="new_body", **kwargs):
+    """Sweep a profile along a path, optionally with a guide rail."""
     import adsk.core
     import adsk.fusion
 
@@ -291,13 +337,35 @@ def sweep(app, profile_sketch_index, path_sketch_index, profile_index=0,
     path_obj = root.features.createPath(all_curves[path_curve_index])
 
     sweep_input = sweeps.createInput(profile, path_obj, _get_operation(operation))
+
+    if orientation == "parallel":
+        sweep_input.orientation = adsk.fusion.SweepOrientationTypes.ParallelSweepOrientationType
+    else:
+        sweep_input.orientation = adsk.fusion.SweepOrientationTypes.PerpendicularSweepOrientationType
+
+    if guide_rail:
+        rail_sketch = _get_sketch(app, guide_rail["sketch_index"])
+        rail_curves = rail_sketch.sketchCurves
+        rail_idx = guide_rail.get("curve_index", 0)
+        if rail_idx >= rail_curves.count:
+            raise ValueError("Guide rail curve index {} out of range".format(rail_idx))
+        rail_path = root.features.createPath(rail_curves.item(rail_idx))
+        sweep_input.guideRail = rail_path
+
     feature = sweeps.add(sweep_input)
-    return "Swept '{}' along path in '{}' -> '{}'".format(
-        prof_sketch.name, path_sketch.name, feature.name)
+    extras = []
+    if guide_rail:
+        extras.append("guide rail")
+    if orientation != "perpendicular":
+        extras.append(orientation)
+    extra_str = " ({})".format(", ".join(extras)) if extras else ""
+    return "Swept '{}' along path in '{}'{} -> '{}'".format(
+        prof_sketch.name, path_sketch.name, extra_str, feature.name)
 
 
-def loft(app, profiles, operation="new_body", **kwargs):
-    """Create a loft between multiple profiles."""
+def loft(app, profiles, guide_rails=None, center_line=None,
+         is_closed=False, operation="new_body", **kwargs):
+    """Create a loft between multiple profiles with optional guide rails and center line."""
     import adsk.fusion
 
     design = app.activeProduct
@@ -311,5 +379,35 @@ def loft(app, profiles, operation="new_body", **kwargs):
         profile = _get_profile(sketch, prof_def.get("profile_index", 0))
         loft_input.loftSections.add(profile)
 
+    if guide_rails:
+        for rail_def in guide_rails:
+            rail_sketch = _get_sketch(app, rail_def["sketch_index"])
+            rail_curves = rail_sketch.sketchCurves
+            rail_idx = rail_def.get("curve_index", 0)
+            if rail_idx >= rail_curves.count:
+                raise ValueError("Guide rail curve index {} out of range".format(rail_idx))
+            rail_path = root.features.createPath(rail_curves.item(rail_idx))
+            loft_input.centerLineOrRails.addRail(rail_path)
+
+    if center_line:
+        cl_sketch = _get_sketch(app, center_line["sketch_index"])
+        cl_curves = cl_sketch.sketchCurves
+        cl_idx = center_line.get("curve_index", 0)
+        if cl_idx >= cl_curves.count:
+            raise ValueError("Center line curve index {} out of range".format(cl_idx))
+        cl_path = root.features.createPath(cl_curves.item(cl_idx))
+        loft_input.centerLineOrRails.addCenterLine(cl_path)
+
+    if is_closed:
+        loft_input.isClosed = True
+
     feature = lofts.add(loft_input)
-    return "Lofted {} profiles -> '{}'".format(len(profiles), feature.name)
+    extras = []
+    if guide_rails:
+        extras.append("{} guide rail(s)".format(len(guide_rails)))
+    if center_line:
+        extras.append("center line")
+    if is_closed:
+        extras.append("closed")
+    extra_str = " with {}".format(", ".join(extras)) if extras else ""
+    return "Lofted {} profiles{} -> '{}'".format(len(profiles), extra_str, feature.name)

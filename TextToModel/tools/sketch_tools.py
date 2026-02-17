@@ -9,21 +9,33 @@ def register(registry):
 
     registry.register(
         name="create_sketch",
-        description="Create a new sketch on a construction plane (XY, XZ, or YZ) or on a planar face.",
+        description=(
+            "Create a new sketch on a construction plane (XY, XZ, YZ), "
+            "a user-created construction plane (by index), or a planar face "
+            "(by 'face:{body_name}:{face_index}')."
+        ),
         input_schema={
             "type": "object",
             "properties": {
                 "plane": {
                     "type": "string",
-                    "description": "Construction plane name: 'XY', 'XZ', or 'YZ'",
+                    "description": "Construction plane name: 'XY', 'XZ', or 'YZ'. Ignored if construction_plane_index or face_ref is provided.",
                     "enum": ["XY", "XZ", "YZ"],
+                },
+                "construction_plane_index": {
+                    "type": "integer",
+                    "description": "Index of a user-created construction plane (0-based). Overrides 'plane'.",
+                },
+                "face_ref": {
+                    "type": "string",
+                    "description": "Planar face reference: 'face:{body_name}:{face_index}'. Overrides 'plane' and 'construction_plane_index'.",
                 },
                 "component_name": {
                     "type": "string",
                     "description": "Optional component name. Uses root component if not specified.",
                 },
             },
-            "required": ["plane"],
+            "required": [],
         },
         handler=create_sketch,
     )
@@ -121,6 +133,36 @@ def register(registry):
         handler=draw_spline,
     )
 
+    registry.register(
+        name="draw_polygon",
+        description="Draw a regular polygon (3-12 sides) on a sketch.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "sides": {
+                    "type": "integer",
+                    "description": "Number of sides (3-12).",
+                    "minimum": 3,
+                    "maximum": 12,
+                },
+                "radius": {
+                    "type": "number",
+                    "description": "Circumscribed radius (center to vertex) in mm.",
+                },
+                "center_x": {"type": "number", "description": "Center X in mm.", "default": 0},
+                "center_y": {"type": "number", "description": "Center Y in mm.", "default": 0},
+                "rotation": {
+                    "type": "number",
+                    "description": "Rotation angle in degrees (0 = first vertex at top).",
+                    "default": 0,
+                },
+                "sketch_index": {"type": "integer", "description": "Sketch index (0-based). Uses last sketch if not specified."},
+            },
+            "required": ["sides", "radius"],
+        },
+        handler=draw_polygon,
+    )
+
 
 def _get_sketch(app, sketch_index=None):
     """Get a sketch by index or return the last sketch."""
@@ -140,9 +182,11 @@ def _get_sketch(app, sketch_index=None):
     return sketches.item(sketches.count - 1)
 
 
-def create_sketch(app, plane="XY", component_name=None, **kwargs):
-    """Create a new sketch on the specified plane."""
+def create_sketch(app, plane="XY", construction_plane_index=None,
+                   face_ref=None, component_name=None, **kwargs):
+    """Create a new sketch on a plane, construction plane, or face."""
     import adsk.fusion
+    from utils.geometry import get_construction_plane, get_body_by_name
 
     design = app.activeProduct
     root = design.rootComponent
@@ -154,11 +198,30 @@ def create_sketch(app, plane="XY", component_name=None, **kwargs):
                 target_comp = occ.component
                 break
 
-    plane_obj = get_plane(app, plane)
+    if face_ref:
+        parts = face_ref.split(":")
+        if len(parts) != 3 or parts[0] != "face":
+            raise ValueError("face_ref must be 'face:body_name:face_index', got '{}'".format(face_ref))
+        body = get_body_by_name(app, parts[1])
+        if not body:
+            raise ValueError("Body '{}' not found.".format(parts[1]))
+        face_index = int(parts[2])
+        if face_index < 0 or face_index >= body.faces.count:
+            raise ValueError("Face index {} out of range (0-{})".format(
+                face_index, body.faces.count - 1))
+        plane_obj = body.faces.item(face_index)
+        plane_desc = face_ref
+    elif construction_plane_index is not None:
+        plane_obj = get_construction_plane(app, construction_plane_index, component_name)
+        plane_desc = "construction plane #{}".format(construction_plane_index)
+    else:
+        plane_obj = get_plane(app, plane)
+        plane_desc = "{} plane".format(plane)
+
     sketch = target_comp.sketches.add(plane_obj)
 
-    return "Created sketch '{}' on {} plane (index: {})".format(
-        sketch.name, plane, target_comp.sketches.count - 1)
+    return "Created sketch '{}' on {} (index: {})".format(
+        sketch.name, plane_desc, target_comp.sketches.count - 1)
 
 
 def draw_circle(app, radius, center_x=0, center_y=0, sketch_index=None, **kwargs):
@@ -226,3 +289,33 @@ def draw_spline(app, points, sketch_index=None, **kwargs):
     sketch.sketchCurves.sketchFittedSplines.add(point_collection)
 
     return "Drew spline through {} points on '{}'".format(len(points), sketch.name)
+
+
+def draw_polygon(app, sides, radius, center_x=0, center_y=0, rotation=0,
+                  sketch_index=None, **kwargs):
+    """Draw a regular polygon by connecting vertices with lines."""
+    from utils.geometry import deg_to_rad
+
+    if sides < 3 or sides > 12:
+        raise ValueError("Sides must be 3-12, got {}.".format(sides))
+
+    sketch = _get_sketch(app, sketch_index)
+    lines = sketch.sketchCurves.sketchLines
+
+    angle_step = 2 * math.pi / sides
+    start_angle = deg_to_rad(rotation) - math.pi / 2  # default: first vertex at top
+
+    vertices = []
+    for i in range(sides):
+        angle = start_angle + i * angle_step
+        vx = center_x + radius * math.cos(angle)
+        vy = center_y + radius * math.sin(angle)
+        vertices.append(point3d(vx, vy, 0))
+
+    for i in range(sides):
+        p1 = vertices[i]
+        p2 = vertices[(i + 1) % sides]
+        lines.addByTwoPoints(p1, p2)
+
+    return "Drew {}-sided polygon: center=({}, {})mm, radius={}mm on '{}'".format(
+        sides, center_x, center_y, radius, sketch.name)

@@ -8,6 +8,14 @@ from tools import utility_tools
 from tools import jis_fastener_tools
 from tools import jis_hole_tools
 from tools import mechanical_tools
+from tools import construction_tools
+from tools import inspect_tools
+from tools import surface_tools
+from tools import split_tools
+from tools import transform_tools
+from tools import import_tools
+from tools import constraint_tools
+from tools import appearance_tools
 
 
 def register_all(registry):
@@ -20,3 +28,11 @@ def register_all(registry):
     jis_fastener_tools.register(registry)
     jis_hole_tools.register(registry)
     mechanical_tools.register(registry)
+    construction_tools.register(registry)
+    inspect_tools.register(registry)
+    surface_tools.register(registry)
+    split_tools.register(registry)
+    transform_tools.register(registry)
+    import_tools.register(registry)
+    constraint_tools.register(registry)
+    appearance_tools.register(registry)

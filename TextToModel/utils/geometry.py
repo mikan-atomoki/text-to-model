@@ -148,3 +148,81 @@ def get_face_by_index(body, face_index):
         raise ValueError("Face index {} out of range (0-{})".format(
             face_index, faces.count - 1))
     return faces.item(face_index)
+
+
+def cm2_to_mm2(cm2):
+    """Convert square centimeters to square millimeters."""
+    return cm2 * 100.0
+
+
+def parse_entity_ref(app, ref_string):
+    """Parse an entity reference string and return the Fusion object.
+
+    Supported formats:
+        'face:{body_name}:{face_index}' -> BRepFace
+        'edge:{body_name}:{edge_index}' -> BRepEdge
+        'plane:XY' / 'plane:XZ' / 'plane:YZ' -> ConstructionPlane
+
+    Args:
+        app: adsk.core.Application instance.
+        ref_string: Entity reference string.
+
+    Returns:
+        The resolved Fusion 360 object.
+    """
+    parts = ref_string.split(":")
+    kind = parts[0].lower()
+
+    if kind == "face":
+        if len(parts) != 3:
+            raise ValueError("Face ref must be 'face:body_name:index', got '{}'".format(ref_string))
+        body = get_body_by_name(app, parts[1])
+        if not body:
+            raise ValueError("Body '{}' not found.".format(parts[1]))
+        idx = int(parts[2])
+        return get_face_by_index(body, idx)
+
+    elif kind == "edge":
+        if len(parts) != 3:
+            raise ValueError("Edge ref must be 'edge:body_name:index', got '{}'".format(ref_string))
+        body = get_body_by_name(app, parts[1])
+        if not body:
+            raise ValueError("Body '{}' not found.".format(parts[1]))
+        idx = int(parts[2])
+        return get_edge_by_index(body, idx)
+
+    elif kind == "plane":
+        if len(parts) != 2:
+            raise ValueError("Plane ref must be 'plane:XY|XZ|YZ', got '{}'".format(ref_string))
+        return get_plane(app, parts[1])
+
+    else:
+        raise ValueError("Unknown entity ref type '{}'. Use face:, edge:, or plane:".format(kind))
+
+
+def get_construction_plane(app, index, component_name=None):
+    """Get a user-created construction plane by index.
+
+    Args:
+        app: adsk.core.Application instance.
+        index: 0-based index into constructionPlanes collection.
+        component_name: Optional component name.
+
+    Returns:
+        ConstructionPlane object.
+    """
+    design = app.activeProduct
+    root = design.rootComponent
+
+    target_comp = root
+    if component_name:
+        for occ in root.allOccurrences:
+            if occ.component.name == component_name:
+                target_comp = occ.component
+                break
+
+    planes = target_comp.constructionPlanes
+    if index < 0 or index >= planes.count:
+        raise ValueError("Construction plane index {} out of range (0-{})".format(
+            index, planes.count - 1))
+    return planes.item(index)
