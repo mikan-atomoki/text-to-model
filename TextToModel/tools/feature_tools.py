@@ -253,18 +253,23 @@ def extrude(app, distance, sketch_index=None, profile_index=0,
 
     dist_cm = mm_to_cm(distance)
     dist_val = adsk.core.ValueInput.createByReal(dist_cm)
+    taper_val = adsk.core.ValueInput.createByReal(deg_to_rad(taper_angle)) if taper_angle != 0 else None
 
     if direction == "symmetric":
         ext_input.setSymmetricExtent(dist_val, True)
+        if taper_val:
+            ext_input.taperAngle = taper_val
     elif direction == "negative":
-        ext_input.setDistanceExtent(False, dist_val)
-        ext_input.setDirectionFlip(True)
+        extent_def = adsk.fusion.DistanceExtentDefinition.create(dist_val)
+        ext_input.setOneSideExtent(
+            extent_def,
+            adsk.fusion.ExtentDirections.NegativeExtentDirection,
+            taper_val if taper_val else adsk.core.ValueInput.createByReal(0),
+        )
     else:
         ext_input.setDistanceExtent(False, dist_val)
-
-    if taper_angle != 0:
-        taper_val = adsk.core.ValueInput.createByReal(deg_to_rad(taper_angle))
-        ext_input.taperAngle = taper_val
+        if taper_val:
+            ext_input.taperAngle = taper_val
 
     feature = extrudes.add(ext_input)
     return "Extruded '{}' profile {} by {}mm ({}) -> '{}'".format(

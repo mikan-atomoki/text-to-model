@@ -70,12 +70,36 @@ def register(registry):
 
     registry.register(
         name="undo",
-        description="Undo the last operation in Fusion 360.",
+        description="Undo operation(s) by rolling back the design timeline. Use count to undo multiple steps. Returns the timeline state before and after.",
         input_schema={
             "type": "object",
-            "properties": {},
+            "properties": {
+                "count": {
+                    "type": "integer",
+                    "description": "Number of operations to undo (default: 1).",
+                    "default": 1,
+                    "minimum": 1,
+                },
+            },
         },
         handler=undo,
+    )
+
+    registry.register(
+        name="redo",
+        description="Redo previously undone operation(s) by advancing the timeline marker forward.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer",
+                    "description": "Number of operations to redo (default: 1).",
+                    "default": 1,
+                    "minimum": 1,
+                },
+            },
+        },
+        handler=redo,
     )
 
     registry.register(
@@ -242,13 +266,59 @@ def set_parameter(app, name, value, comment="", **kwargs):
         return "Created parameter '{}' = {} mm".format(name, value)
 
 
-def undo(app, **kwargs):
-    """Undo the last operation."""
-    doc = app.activeDocument
-    if doc:
-        doc.undo()
-        return "Undo performed."
-    return "No active document to undo."
+def undo(app, count=1, **kwargs):
+    """Undo operation(s) by rolling back the design timeline."""
+    design = app.activeProduct
+    if not design:
+        return "No active design."
+
+    timeline = design.timeline
+    if timeline.count == 0:
+        return "Timeline is empty, nothing to undo."
+
+    current_pos = timeline.markerPosition
+    if current_pos == 0:
+        return "Already at the beginning of the timeline (position 0)."
+
+    new_pos = max(0, current_pos - count)
+    actual_count = current_pos - new_pos
+    timeline.markerPosition = new_pos
+
+    # Describe what was undone
+    undone = []
+    for i in range(new_pos, current_pos):
+        item = timeline.item(i)
+        undone.append(item.entity.name if item.entity else "item {}".format(i))
+
+    return "Undid {} operation(s): [{}]. Timeline: {} -> {} (total {})".format(
+        actual_count, ", ".join(undone), current_pos, new_pos, timeline.count)
+
+
+def redo(app, count=1, **kwargs):
+    """Redo previously undone operation(s) by advancing the timeline marker."""
+    design = app.activeProduct
+    if not design:
+        return "No active design."
+
+    timeline = design.timeline
+    if timeline.count == 0:
+        return "Timeline is empty, nothing to redo."
+
+    current_pos = timeline.markerPosition
+    if current_pos >= timeline.count:
+        return "Already at the end of the timeline (position {}).".format(current_pos)
+
+    new_pos = min(timeline.count, current_pos + count)
+    actual_count = new_pos - current_pos
+    timeline.markerPosition = new_pos
+
+    redone = []
+    for i in range(current_pos, new_pos):
+        item = timeline.item(i)
+        redone.append(item.entity.name if item.entity else "item {}".format(i))
+
+    return "Redid {} operation(s): [{}]. Timeline: {} -> {} (total {})".format(
+        actual_count, ", ".join(redone), current_pos, new_pos, timeline.count)
 
 
 def export_step(app, file_path, **kwargs):
@@ -307,6 +377,8 @@ def export_stl(app, file_path, body_name=None, refinement="medium", **kwargs):
 
 def execute_code(app, code, **kwargs):
     """Execute arbitrary Python code with access to Fusion API."""
+    import sys
+    import io
     import adsk.core
     import adsk.fusion
 
@@ -321,9 +393,23 @@ def execute_code(app, code, **kwargs):
         "result": None,
     }
 
-    exec(code, {"__builtins__": __builtins__}, local_vars)
+    # Capture print output
+    capture = io.StringIO()
+    old_stdout = sys.stdout
+    try:
+        sys.stdout = capture
+        exec(code, {"__builtins__": __builtins__}, local_vars)
+    finally:
+        sys.stdout = old_stdout
 
+    printed = capture.getvalue()
     result = local_vars.get("result")
+
+    parts = []
+    if printed.strip():
+        parts.append(printed.rstrip())
     if result is not None:
-        return str(result)
-    return "Code executed successfully."
+        parts.append("result = {}".format(result))
+    if parts:
+        return "\n".join(parts)
+    return "Code executed successfully (no output)."

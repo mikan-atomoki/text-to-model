@@ -1,7 +1,7 @@
 """Sketch creation and drawing tools for Fusion 360."""
 
 import math
-from utils.geometry import mm_to_cm, point3d, get_plane
+from utils.geometry import mm_to_cm, cm_to_mm, point3d, get_plane
 
 
 def register(registry):
@@ -220,8 +220,35 @@ def create_sketch(app, plane="XY", construction_plane_index=None,
 
     sketch = target_comp.sketches.add(plane_obj)
 
-    return "Created sketch '{}' on {} (index: {})".format(
-        sketch.name, plane_desc, target_comp.sketches.count - 1)
+    # Extract coordinate mapping from sketch transform
+    transform = sketch.transform
+    sx = [transform.getCell(0, 0), transform.getCell(1, 0), transform.getCell(2, 0)]
+    sy = [transform.getCell(0, 1), transform.getCell(1, 1), transform.getCell(2, 1)]
+    origin = [
+        cm_to_mm(transform.getCell(0, 3)),
+        cm_to_mm(transform.getCell(1, 3)),
+        cm_to_mm(transform.getCell(2, 3)),
+    ]
+
+    def fmt_vec(v):
+        parts = []
+        labels = ["X", "Y", "Z"]
+        for val, label in zip(v, labels):
+            r = round(val, 4)
+            if r != 0:
+                parts.append("{}{}".format("+" if r > 0 else "", "{}{}".format(r, label)))
+        return "World " + "".join(parts) if parts else "World 0"
+
+    mapping = (
+        "Coordinate mapping: sketch_x -> {}, sketch_y -> {}. "
+        "Origin: ({}, {}, {}) mm"
+    ).format(
+        fmt_vec(sx), fmt_vec(sy),
+        round(origin[0], 2), round(origin[1], 2), round(origin[2], 2),
+    )
+
+    return "Created sketch '{}' on {} (index: {}). {}".format(
+        sketch.name, plane_desc, target_comp.sketches.count - 1, mapping)
 
 
 def draw_circle(app, radius, center_x=0, center_y=0, sketch_index=None, **kwargs):
