@@ -159,7 +159,7 @@ def list_faces(app, body_name, component_name=None, **kwargs):
     for i in range(body.faces.count):
         face = body.faces.item(i)
         centroid = face.centroid
-        area_mm2 = cm_to_mm(cm_to_mm(face.area))  # cm^2 -> mm^2
+        area_mm2 = face.area * 100.0  # cm^2 -> mm^2
 
         face_info = {
             "index": i,

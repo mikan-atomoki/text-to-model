@@ -7,6 +7,7 @@ allowing Claude Desktop to directly control Fusion 360 for CAD operations.
 import json
 import logging
 import os
+import shutil
 import sys
 import threading
 
@@ -14,6 +15,14 @@ import threading
 _ADDIN_DIR = os.path.dirname(os.path.abspath(__file__))
 if _ADDIN_DIR not in sys.path:
     sys.path.insert(0, _ADDIN_DIR)
+
+# Prevent stale bytecode: delete all __pycache__ dirs and disable .pyc generation
+sys.dont_write_bytecode = True
+for _root, _dirs, _ in os.walk(_ADDIN_DIR):
+    for _d in _dirs:
+        if _d == "__pycache__":
+            shutil.rmtree(os.path.join(_root, _d), ignore_errors=True)
+    _dirs[:] = [d for d in _dirs if d != "__pycache__"]
 
 # Fusion 360 imports
 import adsk.core
@@ -140,11 +149,12 @@ def stop(context):
 
         if _server:
             _server.shutdown_server()
-            _server = None
 
         if _server_thread:
             _server_thread.join(timeout=5)
             _server_thread = None
+
+        _server = None
 
         if _event_bridge:
             _event_bridge.unregister()

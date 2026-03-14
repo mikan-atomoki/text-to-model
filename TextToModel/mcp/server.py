@@ -96,9 +96,9 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
 
         try:
             while not conn.closed and not self.server.shutdown_flag.is_set():
-                self.server.shutdown_flag.wait(timeout=30)
+                self.server.shutdown_flag.wait(timeout=15)
                 if not conn.closed:
-                    conn.send_event("", event="ping")
+                    conn.send_comment("keepalive")
         except (BrokenPipeError, ConnectionResetError, OSError):
             pass
         finally:
@@ -146,7 +146,8 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
 
         if response is not None:
             sse_manager = self.server.sse_manager
-            sse_manager.send_to_session(session_id, response, event="message")
+            if not sse_manager.send_to_session(session_id, response, event="message"):
+                logger.warning("Failed to send SSE response for session %s (disconnected?)", session_id)
 
 
 class ThreadedMCPServer(ThreadingMixIn, HTTPServer):
@@ -167,3 +168,4 @@ class ThreadedMCPServer(ThreadingMixIn, HTTPServer):
         self.shutdown_flag.set()
         self.sse_manager.cleanup()
         self.shutdown()
+        self.server_close()

@@ -243,11 +243,14 @@ def shell(app, body_name, face_indices, thickness, outside_thickness=None,
             raise ValueError("Face index {} out of range (0-{})".format(idx, body.faces.count - 1))
         face_collection.add(body.faces.item(idx))
 
-    shell_input = shells.createInput(face_collection, direction == "inside")
-    shell_input.insideThickness = adsk.core.ValueInput.createByReal(mm_to_cm(thickness))
+    shell_input = shells.createInput(face_collection, False)
 
-    if outside_thickness is not None:
+    if direction == "outside" and outside_thickness is not None:
         shell_input.outsideThickness = adsk.core.ValueInput.createByReal(mm_to_cm(outside_thickness))
+    else:
+        shell_input.insideThickness = adsk.core.ValueInput.createByReal(mm_to_cm(thickness))
+        if outside_thickness is not None:
+            shell_input.outsideThickness = adsk.core.ValueInput.createByReal(mm_to_cm(outside_thickness))
 
     feature = shells.add(shell_input)
     desc = "{}mm inside".format(thickness)
@@ -277,14 +280,22 @@ def mirror(app, body_names, plane, operation="new_body", **kwargs):
     mirrors = root.features.mirrorFeatures
     mirror_input = mirrors.createInput(body_collection, plane_obj)
 
-    if operation == "join":
-        mirror_input.patternComputeOption = adsk.fusion.PatternComputeOptions.IdenticalCompute
-    else:
-        mirror_input.patternComputeOption = adsk.fusion.PatternComputeOptions.IdenticalCompute
+    mirror_input.patternComputeOption = adsk.fusion.PatternComputeOptions.IdenticalCompute
 
     feature = mirrors.add(mirror_input)
-    return "Mirrored {} bodies across {} -> '{}'".format(
-        len(body_names), plane, feature.name)
+
+    if operation == "join":
+        tool_bodies = adsk.core.ObjectCollection.create()
+        for i in range(feature.bodies.count):
+            tool_bodies.add(feature.bodies.item(i))
+        combine_input = root.features.combineFeatures.createInput(
+            body_collection.item(0), tool_bodies
+        )
+        combine_input.operation = adsk.fusion.FeatureOperations.JoinFeatureOperation
+        root.features.combineFeatures.add(combine_input)
+
+    return "Mirrored {} bodies across {} ({}) -> '{}'".format(
+        len(body_names), plane, operation, feature.name)
 
 
 def variable_fillet(app, body_name, edge_index, start_radius, end_radius,
@@ -314,14 +325,16 @@ def variable_fillet(app, body_name, edge_index, start_radius, end_radius,
     start_val = adsk.core.ValueInput.createByReal(mm_to_cm(start_radius))
     end_val = adsk.core.ValueInput.createByReal(mm_to_cm(end_radius))
 
-    var_set = fillet_input.addVariableRadiusEdgeSet(
+    var_set = fillet_input.edgeSetInputs.addVariableRadiusEdgeSet(
         edge_collection, start_val, end_val, True)
 
     if mid_points:
+        positions = []
+        radii = []
         for mp in mid_points:
-            pos = mp["position"]
-            rad = adsk.core.ValueInput.createByReal(mm_to_cm(mp["radius"]))
-            var_set.addRadiusAtParameter(pos, rad)
+            positions.append(adsk.core.ValueInput.createByReal(mp["position"]))
+            radii.append(adsk.core.ValueInput.createByReal(mm_to_cm(mp["radius"])))
+        var_set.setMidRadii(radii, positions)
 
     feature = fillets.add(fillet_input)
     mid_desc = ""
@@ -355,10 +368,9 @@ def draft(app, body_name, face_indices, plane, angle, **kwargs):
                 idx, body.faces.count - 1))
         face_collection.add(body.faces.item(idx))
 
-    draft_input = drafts.createInput(
-        face_collection, plane_obj,
-        adsk.core.ValueInput.createByReal(deg_to_rad(angle)),
-        False,
+    draft_input = drafts.createInput(face_collection, plane_obj, False)
+    draft_input.setSingleAngle(
+        False, adsk.core.ValueInput.createByReal(deg_to_rad(angle))
     )
 
     feature = drafts.add(draft_input)

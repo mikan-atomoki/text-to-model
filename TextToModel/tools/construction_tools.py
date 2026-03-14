@@ -38,8 +38,7 @@ def register(registry):
             "properties": {
                 "base_plane": {
                     "type": "string",
-                    "description": "Base plane: 'XY', 'XZ', or 'YZ'.",
-                    "enum": ["XY", "XZ", "YZ"],
+                    "description": "Base plane: 'XY', 'XZ', 'YZ', or 'face:{body_name}:{face_index}' for a planar face.",
                 },
                 "axis": {
                     "type": "string",
@@ -198,7 +197,7 @@ def create_angled_plane(app, base_plane, axis, angle, component_name=None, **kwa
     root = design.rootComponent
     comp = _get_target_component(app, component_name)
 
-    base = get_plane(app, base_plane)
+    base = _resolve_plane_or_face(app, base_plane)
 
     if axis.startswith("edge:"):
         parts = axis.split(":")

@@ -43,6 +43,19 @@ class SSEConnection:
             self.closed = True
             return False
 
+    def send_comment(self, comment=""):
+        """Send an SSE comment line as keepalive (not dispatched as event)."""
+        if self.closed:
+            return False
+        try:
+            with self.lock:
+                self.wfile.write(": {}\n\n".format(comment).encode("utf-8"))
+                self.wfile.flush()
+            return True
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            self.closed = True
+            return False
+
     def close(self):
         self.closed = True
 

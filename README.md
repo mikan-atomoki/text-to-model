@@ -1,263 +1,124 @@
-Fusion 360 を Claude Desktop から直接操作できる MCP (Model Context Protocol) サーバー アドイン。
-テキストの指示だけで 3D モデリング・JIS 規格部品の生成が可能です。
+# TextToModel
 
-## 概要
+**Turn natural language into 3D models in Fusion 360.**
 
-このプロジェクトはFusion360上でHTTP/SSEベースのMCPサーバーを起動し、Claude Desktop と接続し、モデリングを支援するものです。
-64 種類の MCP ツールを通じて、スケッチ作成・押し出し・フィレット・JIS ボルト生成など、幅広い CAD 操作をテキスト指示で実行できます。
+An MCP (Model Context Protocol) server add-in that connects Claude to Autodesk Fusion 360 — giving you 64 CAD tools controllable through plain text.
 
-## セットアップ
+![demo](docs/demo.gif)
 
-### 必要環境
+---
 
-- Fusion 360
-- claude desktop またはclaude code
-- Node.js (npx 用)
+## Highlights
 
-### インストール
+- **Natural Language → CAD** — Describe what you want, Claude builds it in Fusion 360
+- **64 MCP Tools** — Sketches, extrudes, fillets, sweeps, lofts, booleans, patterns, and more
+- **JIS Standard Parts** — Generate bolts, nuts, screws, washers, keyways, bearings, and O-rings with accurate JIS dimensions (ISO equivalents planned)
+- **Full Parametric Workflow** — Sketches → features → modifications → export (STEP/STL)
+- **Works with Claude Desktop & Claude Code**
 
-1. このリポジトリをクローンまたはダウンロード
+## Quick Start
+
+### Prerequisites
+
+- [Autodesk Fusion 360](https://www.autodesk.com/products/fusion-360)
+- [Claude Desktop](https://claude.ai/download) or [Claude Code](https://docs.anthropic.com/en/docs/claude-code)
+- [Node.js](https://nodejs.org/) (for `npx`)
+
+### Installation
+
+1. Clone this repo into Fusion 360's add-in directory:
 
 ```bash
-git clone https://github.com/mikan-atomoki/text-to-model.git
-```
-
-2. Fusion 360 のアドインフォルダにコピー
-
-```
 # Windows
-%APPDATA%\Autodesk\Autodesk Fusion 360\API\AddIns\
+git clone https://github.com/mikan-atomoki/text-to-model.git "%APPDATA%\Autodesk\Autodesk Fusion 360\API\AddIns\TextToModel"
 
 # macOS
-~/Library/Application Support/Autodesk/Autodesk Fusion 360/API/AddIns/
+git clone https://github.com/mikan-atomoki/text-to-model.git ~/Library/Application\ Support/Autodesk/Autodesk\ Fusion\ 360/API/AddIns/TextToModel
 ```
 
-3. Fusion 360 を起動し、UTILITIES > ADD-INS > Scripts and Add-insから**TextToModel**を実行
+2. In Fusion 360: **UTILITIES → ADD-INS → Scripts and Add-Ins** → Run **TextToModel**
 
-4. Claude Desktop の MCP 設定に以下を追加（`.mcp.json` を参照・claude codeなら必要なし）
+3. Connect to Claude:
+
+**Claude Desktop** — add to your [MCP config](https://modelcontextprotocol.io/quickstart/user#configuring-claude-desktop) (`claude_desktop_config.json`):
 
 ```json
 {
   "mcpServers": {
     "fusion360": {
-      "command": "cmd",
-      "args": ["/c", "npx", "-y", "mcp-remote", "http://127.0.0.1:13405/sse"]
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "http://127.0.0.1:13405/sse"]
     }
   }
 }
 ```
 
-## MCP ツール一覧 (64 tools)
+**Claude Code** — run:
 
-### スケッチ (7)
-
-| ツール | 説明 |
-|--------|------|
-| `create_sketch` | スケッチ作成 |
-| `draw_circle` | 円 |
-| `draw_rectangle` | 矩形 |
-| `draw_line` | 直線 |
-| `draw_arc` | 円弧 |
-| `draw_spline` | スプライン |
-| `draw_polygon` | 正多角形 |
-
-### フィーチャー (4)
-
-| ツール | 説明 |
-|--------|------|
-| `extrude` | 押し出し |
-| `revolve` | 回転 |
-| `sweep` | スイープ |
-| `loft` | ロフト |
-
-### 修正 (6)
-
-| ツール | 説明 |
-|--------|------|
-| `fillet` | フィレット |
-| `chamfer` | 面取り |
-| `shell` | シェル |
-| `mirror` | ミラー |
-| `variable_fillet` | 可変フィレット |
-| `draft` | 抜き勾配 |
-
-### パターン・結合 (3)
-
-| ツール | 説明 |
-|--------|------|
-| `circular_pattern` | 円形パターン |
-| `rectangular_pattern` | 矩形パターン |
-| `combine` | ブーリアン演算 |
-
-### ユーティリティ (9)
-
-| ツール | 説明 |
-|--------|------|
-| `get_design_info` | ドキュメント情報取得 |
-| `list_bodies` | ボディ一覧 |
-| `list_components` | コンポーネント一覧 |
-| `get_parameters` | パラメータ一覧 |
-| `set_parameter` | パラメータ設定 |
-| `undo` | 元に戻す |
-| `export_step` | STEP エクスポート |
-| `export_stl` | STL エクスポート |
-| `execute_code` | コード実行 |
-
-### JIS 締結部品 (4)
-
-| ツール | 説明 |
-|--------|------|
-| `create_jis_bolt` | ボルト (B1176/B1180) |
-| `create_jis_nut` | ナット (B1181) |
-| `create_jis_screw` | 小ネジ (B1111) |
-| `create_jis_washer` | 座金 (B1256) |
-
-### JIS 穴加工 (3)
-
-| ツール | 説明 |
-|--------|------|
-| `create_threaded_hole` | タップ穴 |
-| `create_counterbore_hole` | ザグリ穴 |
-| `create_countersink_hole` | 皿ザグリ穴 |
-
-### 機械要素 (3)
-
-| ツール | 説明 |
-|--------|------|
-| `create_keyway` | キー溝 (B1301) |
-| `create_bearing_hole` | ベアリング穴 (B1520) |
-| `create_oring_groove` | Oリング溝 (B2401) |
-
-### 構築ジオメトリ (4)
-
-| ツール | 説明 |
-|--------|------|
-| `create_offset_plane` | オフセット平面 |
-| `create_angled_plane` | 角度平面 |
-| `create_midplane` | 中間平面 |
-| `create_construction_axis` | 構築軸 |
-
-### 検査 (5)
-
-| ツール | 説明 |
-|--------|------|
-| `list_edges` | エッジ一覧 |
-| `list_faces` | フェース一覧 |
-| `list_sketches` | スケッチ一覧 |
-| `get_body_bounds` | バウンディングボックス |
-| `list_construction_planes` | 構築平面一覧 |
-
-### サーフェス (4)
-
-| ツール | 説明 |
-|--------|------|
-| `patch_surface` | パッチ |
-| `thicken_surface` | 厚み付け |
-| `offset_surface` | オフセット |
-| `boundary_fill` | バウンダリフィル |
-
-### 分割 (2)
-
-| ツール | 説明 |
-|--------|------|
-| `split_body` | ボディ分割 |
-| `split_face` | フェース分割 |
-
-### 変換 (3)
-
-| ツール | 説明 |
-|--------|------|
-| `move_body` | 移動/回転 |
-| `scale_body` | 拡大縮小 |
-| `copy_body` | コピー |
-
-### インポート (2)
-
-| ツール | 説明 |
-|--------|------|
-| `import_svg` | SVG インポート |
-| `import_dxf` | DXF インポート |
-
-### 拘束・寸法 (3)
-
-| ツール | 説明 |
-|--------|------|
-| `add_sketch_constraint` | 幾何拘束 |
-| `add_sketch_dimension` | 寸法 |
-| `list_sketch_entities` | エンティティ一覧 |
-
-### 外観 (2)
-
-| ツール | 説明 |
-|--------|------|
-| `set_body_color` | ボディ色設定 |
-| `rename_body` | ボディ名変更 |
-
-## ファイル構成
-
-```
-TextToModel/
-├── TextToModel.py            # エントリーポイント（run / stop）
-├── TextToModel.manifest      # Fusion 360 アドインマニフェスト
-├── config.json               # サーバー設定（ホスト・ポート・ログレベル）
-│
-├── mcp/                      # MCP サーバー
-│   ├── server.py             # HTTP/SSE サーバー
-│   ├── protocol.py           # MCP プロトコル (JSON-RPC)
-│   ├── jsonrpc.py            # JSON-RPC リクエスト/レスポンス
-│   └── sse_handler.py        # SSE コネクション管理
-│
-├── bridge/                   # スレッドブリッジ
-│   ├── event_bridge.py       # CustomEvent ベースのブリッジ
-│   └── executor.py           # ツール実行コーディネーター
-│
-├── tools/                    # MCP ツール (16 モジュール)
-│   ├── __init__.py
-│   ├── registry.py           # ツール登録・実行
-│   ├── sketch_tools.py
-│   ├── feature_tools.py
-│   ├── modify_tools.py
-│   ├── pattern_tools.py
-│   ├── utility_tools.py
-│   ├── jis_fastener_tools.py
-│   ├── jis_hole_tools.py
-│   ├── mechanical_tools.py
-│   ├── construction_tools.py
-│   ├── inspect_tools.py
-│   ├── surface_tools.py
-│   ├── split_tools.py
-│   ├── transform_tools.py
-│   ├── import_tools.py
-│   ├── constraint_tools.py
-│   └── appearance_tools.py
-│
-├── data/                     # JIS 規格データ (8 モジュール)
-│   ├── jis_threads.py        # ねじ寸法 (M2〜M12)
-│   ├── jis_bolts.py          # ボルト (B1176 / B1180)
-│   ├── jis_nuts.py           # ナット (B1181)
-│   ├── jis_screws.py         # 小ネジ (B1111)
-│   ├── jis_washers.py        # 座金 (B1256)
-│   ├── jis_keyways.py        # キー溝 (B1301)
-│   ├── jis_bearings.py       # ベアリング (B1520)
-│   └── jis_orings.py         # O リング (B2401)
-│
-└── utils/
-    └── geometry.py           # mm⇔cm 変換、Point3D ヘルパー
+```bash
+claude mcp add fusion360-mcp --transport sse http://127.0.0.1:13405/sse
 ```
 
-## 使用例
+That's it. Open Claude and start modeling.
 
-Claude Desktop で以下のような指示を出すと、Fusion 360 上にモデルが作成されます。
+## Examples
 
 ```
-M8x30 の六角穴付きボルトを原点に作成して
+Create an M8x30 hex socket head bolt at the origin
 ```
 
 ```
-XY 平面に 50mm × 30mm の矩形スケッチを描いて、20mm 押し出して、
-上面の長辺エッジに R3 のフィレットを付けて
+Draw a 50mm × 30mm rectangle on the XY plane, extrude it 20mm,
+and add a 3mm fillet to the top long edges
 ```
 
 ```
-直径 20mm の円を描いて回転体を作り、キー溝を追加して
+Draw a 20mm diameter circle, create a revolve, then add a keyway
 ```
+
+## Tool Categories (64 tools)
+
+| Category | Count | Tools |
+|----------|-------|-------|
+| **Sketch** | 7 | circle, rectangle, line, arc, spline, polygon, create sketch |
+| **Features** | 4 | extrude, revolve, sweep, loft |
+| **Modify** | 6 | fillet, chamfer, shell, mirror, variable fillet, draft |
+| **Patterns & Combine** | 3 | circular/rectangular pattern, boolean combine |
+| **JIS Fasteners** | 4 | bolt, nut, screw, washer (with JIS standard dimensions) |
+| **JIS Holes** | 3 | threaded hole, counterbore, countersink |
+| **Mechanical** | 3 | keyway (B1301), bearing hole (B1520), O-ring groove (B2401) |
+| **Construction** | 4 | offset/angled/mid plane, construction axis |
+| **Inspect** | 5 | list edges/faces/sketches/planes, bounding box |
+| **Surface** | 4 | patch, thicken, offset, boundary fill |
+| **Split** | 2 | split body, split face |
+| **Transform** | 3 | move, scale, copy |
+| **Import** | 2 | SVG, DXF |
+| **Constraints** | 3 | geometric constraint, dimension, list entities |
+| **Appearance** | 2 | body color, rename body |
+| **Utility** | 9 | design info, list bodies/components, parameters, undo, export STEP/STL, execute code |
+
+## Architecture
+
+```
+Claude Desktop/Code ←→ MCP (HTTP/SSE) ←→ Bridge (CustomEvent) ←→ Fusion 360 API
+```
+
+The add-in runs an HTTP/SSE server inside Fusion 360. Claude sends tool calls via MCP protocol, and the bridge executes them on Fusion's main thread using a CustomEvent-based synchronization mechanism.
+
+## License
+
+MIT
+
+---
+
+<details>
+<summary>🇯🇵 日本語</summary>
+
+Fusion 360 を Claude Desktop/Code から直接操作できる MCP サーバーアドイン。
+テキストの指示だけで 3D モデリング・JIS 規格部品の生成が可能です。
+
+64種類のMCPツールで、スケッチ作成・押し出し・フィレット・JIS ボルト生成など、幅広いCAD操作をテキスト指示で実行できます。
+
+セットアップ方法や詳細は英語版をご参照ください。
+
+</details>

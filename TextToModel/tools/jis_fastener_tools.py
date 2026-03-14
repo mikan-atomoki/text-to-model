@@ -258,7 +258,7 @@ def create_jis_bolt(app, size, length, bolt_type="socket_head", x=0, y=0, z=0, *
         adsk.fusion.FeatureOperations.JoinFeatureOperation
     )
     shank_input.setDistanceExtent(False, adsk.core.ValueInput.createByReal(mm_to_cm(length)))
-    shank_input.setDirectionFlip(True)
+    shank_input.isDirectionFlipped = True
     extrudes.add(shank_input)
 
     # Move occurrence to position
@@ -370,9 +370,9 @@ def create_jis_screw(app, size, length, head_type="pan", x=0, y=0, z=0, **kwargs
         lines.addByTwoPoints(p4, p0)
 
         head_profile = head_sketch.profiles.item(0)
-        x_axis = comp.xConstructionAxis
+        z_axis = comp.zConstructionAxis
         rev_input = revolves.createInput(
-            head_profile, x_axis,
+            head_profile, z_axis,
             adsk.fusion.FeatureOperations.NewBodyFeatureOperation
         )
         rev_input.setAngleExtent(
@@ -405,9 +405,9 @@ def create_jis_screw(app, size, length, head_type="pan", x=0, y=0, z=0, **kwargs
         lines.addByTwoPoints(p3, p0)
 
         head_profile = head_sketch.profiles.item(0)
-        x_axis = comp.xConstructionAxis
+        z_axis = comp.zConstructionAxis
         rev_input = revolves.createInput(
-            head_profile, x_axis,
+            head_profile, z_axis,
             adsk.fusion.FeatureOperations.NewBodyFeatureOperation
         )
         rev_input.setAngleExtent(
@@ -428,7 +428,7 @@ def create_jis_screw(app, size, length, head_type="pan", x=0, y=0, z=0, **kwargs
         adsk.fusion.FeatureOperations.JoinFeatureOperation
     )
     shank_input.setDistanceExtent(False, adsk.core.ValueInput.createByReal(mm_to_cm(length)))
-    shank_input.setDirectionFlip(True)
+    shank_input.isDirectionFlipped = True
     extrudes.add(shank_input)
 
     if x != 0 or y != 0 or z != 0:
