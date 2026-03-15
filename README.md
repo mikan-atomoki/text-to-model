@@ -6,6 +6,8 @@ An MCP (Model Context Protocol) server add-in that connects Claude to Autodesk F
 
 ![demo](docs/demo.gif)
 
+[![text-to-model MCP server](https://glama.ai/mcp/servers/mikan-atomoki/text-to-model/badges/card.svg)](https://glama.ai/mcp/servers/mikan-atomoki/text-to-model)
+
 ---
 
 ## Highlights
