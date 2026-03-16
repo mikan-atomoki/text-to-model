@@ -6,4 +6,4 @@ COPY docker/ ./docker/
 
 EXPOSE 13405
 
-CMD ["python", "docker/start_server.py"]
+CMD ["python", "docker/stdio_server.py"]
