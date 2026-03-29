@@ -16,6 +16,10 @@ An MCP (Model Context Protocol) server add-in that connects Claude to Autodesk F
 - **Full Parametric Workflow** — Sketches → features → modifications → export (STEP/STL)
 - **Works with Claude Desktop & Claude Code**
 
+## Hosted deployment
+
+A hosted deployment is available on [Fronteir AI](https://fronteir.ai/mcp/mikan-atomoki-text-to-model).
+
 ## Quick Start
 
 ### Prerequisites
